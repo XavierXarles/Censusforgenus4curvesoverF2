@@ -1,0 +1,588 @@
+
+
+//Code that compute all Curves of Genus 4 over F_2, modulo Isomorphism
+//the curves are also given with their A-numbers, and pack accordingly
+
+//The code first computes the possible A-numbers of the hyperelliptic Curves
+//and then it does the same for the non hyperelliptic curves. 
+//After that it packs each curve with its A-number.
+//At the end we get three lists: one with the A-numbers (ordered)
+//and two lists of lists of polynomials: one for hyperelliptic curves, one for non hyperelliptic.
+//  each list contains the lists of polynomials defining the curves
+//The hyperelliptic curves given by two polynomials in one variable
+//the non hyperelliptic curves given by two homogeneuos polynomias in 4 variables
+// (one of degree 2, one of degree 3). 
+
+// Functions that we use 
+
+//This function is used to discart some equations that will give a singular curve
+
+SetCubicsSPt:=function(Q,pt);
+    //Function that computes the set of cubics (as vector in P^19)
+    //such that, together with a given quadric Q
+    //contain a point pt and the resulting curve is singular at that point.
+    K:=Parent(pt[1]);
+    //Jacobian matrix of Q at this point
+    DP1:=[Evaluate(Derivative(Q,j),pt): j in [1..4]];
+    //This is to work with the generic cubic in 4 variables
+    L:=FunctionField(K,20);
+    PL:=ProjectiveSpace(L,3);
+    I:=[[i,j,k,l]: l in [0..3],k in [0..3], j in [0..3],i in [0..3]| i+j+l+k eq 3];
+    XYZT:=[&*[PL.j^i[j]: j in [1..4]]: i in I];
+    //Generic Cubic
+    FG:=&+[L.i*XYZT[i]: i in [1..20]];
+    //Jacobian Matrix of the generic cubic
+    DF:=[Evaluate(Derivative(FG,j),pt): j in [1..4]];
+    //Condition for the cubic to contain the point
+    EF:=Numerator(Evaluate(FG,pt));
+    //Equations to know the jacobian is zero
+    LM:=Minors(Matrix(L,[DP1,DF]), 2);
+    LM:=[Numerator(m): m in LM];
+    Append(~LM,EF);
+    //LM contains the given equations, one list for each point in PQ
+    Pd:=ProjectiveSpace(Parent(EF));
+    return {Coordinates(pt): pt in Points(Scheme(Pd,LM))};
+end function; 
+
+FindCubicsQ:=function(Q);
+    P:=Parent(Q);
+    K:=BaseRing(P);
+    P:=ProjectiveSpace(P);
+    G:=GL(4,K);
+    //We compute the matrices that fix Q
+    GQ:=[];
+    for A in G do
+        QA:=Evaluate(Q,[&+[A[i,j]*P.i: i in [1..4]]: j in [1..4]]);
+        if QA eq Q then Append(~GQ,A); end if;
+    end for;
+    //We will identify the set of homogeneous polynomials of degree 3 in A
+    //with a porjective space (of dimension 19).
+    I:=[[i,j,k,l]: l in [0..3],k in [0..3], j in [0..3],i in [0..3]| i+j+l+k eq 3];
+    XYZT:=[P.1^i[1]*P.2^i[2]*P.3^i[3]*P.4^i[4]: i in I];
+    d:=#XYZT; //20
+    Pd:=ProjectiveSpace(K,d-1);
+    
+    MQ:={[MonomialCoefficient(Q*(&+[P.i*pt[i]: i in [1..4]]),XYZT[i]):i in [1..d]] : pt in Points(P)};
+    //Pd are all the points corresponding to cubics 
+    Pd:={Coordinates(p): p in Points(Pd,K)};
+    //we take out the ones multiple of Q1 (since together with Q1 do not form a curve).
+    Pd diff:=MQ;
+    //We will take out also all the points where some of the points 
+    //in the quadric Q is singular. 
+    // Here we will use the function defined above. 
+    //Points in Q
+    PQ:=[Coordinates(pt): pt in Points(Scheme(P,Q))];
+    for pt in PQ do 
+        Pd diff:=SetCubicsSPt(Q,pt);
+    end for;
+
+    //This set will contain one representative of cubic G such that [Q,G] define a Genus 4 curve 
+    // for each class modulo isomorphism of curves 
+    //(recall that the isomorphims are given by matrices in GL(4) that fix Q, so in MQ
+    PdQ:={};
+    //We choose one representative
+    //If it corresponds to a curve of genus 4, we put in the set PdQ
+    //We take out from Pd this set of cubics. We repeat until is exhausted
+    //all the set of cubics. 
+
+    while not(IsEmpty(Pd)) do
+        v:=Rep(Pd);
+        G:=&+[v[i]*XYZT[i]: i in [1..d]];
+        Gv:={[MonomialCoefficient(Evaluate(G,[&+[A[i,j]*P.i: i in [1..4]]: j in [1..4]]),XYZT[i]):i in [1..d]] : A in GQ};
+        Gv join:= {[w[i]+m[i]: i in [1..#w]]: w in Gv, m in MQ};
+        Pd diff:=Gv;
+            try D:=Curve(P,[Q,G]);
+            if not(IsSingular(D)) then 
+              Include(~PdQ,Min(Gv)); 
+            end if;
+        catch e;
+        end try;
+    end while;
+    // The list of curves (ordered).
+    PDQ:=Sort(Setseq(PdQ));
+    return PDQ;
+end function;
+
+
+
+//The actual Code 
+
+
+
+//The fields
+
+K:=GF(2);
+K2:=GF(2^2);
+K3:=GF(2^3);
+K4:=GF(2^4);
+
+A<x>:=PolynomialRing(K);
+
+
+g:=4;
+
+
+
+//First we compute all hyperelliptic curves.
+
+//Hyperelliptic Genus 4 curves can be written as 
+// y^2+q*y=p
+//where deg(q)<=g+1 and deg(p)<=2*g+2
+//if max(2*deg(q),deg(p))=2*g+1 or 2*g+2
+
+
+//(plus some conditions for non singularity)
+
+
+//The set of  polynomials of degree <= 2*g+2=K^(2*g+3)
+
+V11:=VectorSpace(K, 2*g+3);
+
+
+//The set of polynomials of degree g+1=K^(g+2)
+
+V5:=VectorSpace(K,g+2);
+P4:=Sort([&+[v[i]*x^(i-1): i in [1..g+2]]: v in V5]);
+
+//We take out the zero polynomial
+Exclude(~P4,A!0);
+
+//Now we compute one degree <g+2 polynomial under the action of PGL(2,K)
+
+PP4:=Seqset(P4);
+P4:=[];
+
+GL2:=GL(2,K);
+
+
+while not(IsEmpty(PP4)) do
+    p:=Rep(PP4);
+    PPp:= {Numerator((A[2,1]*x+A[2,2])^(g+1)*Evaluate(p,(A[1,1]*x+A[1,2])/(A[2,1]*x+A[2,2]))): A in GL2};
+    p:=Min(PPp);
+    Append(~P4,p);
+    PP4 diff:=PPp;
+end while;
+
+Sort(~P4);
+
+P4;
+
+/*
+[
+    1,
+    x,
+    x^2,
+    x^2 + x,
+    x^2 + x + 1,
+    x^3 + 1,
+    x^3 + x,
+    x^3 + x + 1,
+    x^4 + x,
+    x^4 + x + 1,
+    x^4 + x^2 + 1,
+    x^4 + x^2 + x,
+    x^4 + x^3 + 1,
+    x^5 + x + 1,
+    x^5 + x^2 + 1
+]
+*/
+
+
+//The set of possible A-numbers for hyperelliptic curves will be ANumbers
+//The hyperelliptic curves (as two polynomials) will be saved in CurvesH
+
+ANumbers:={};
+
+CurvesH:={};
+
+
+//First we compute all curves and save the A-numbers
+//and the curves
+
+
+for q in P4 do
+ //for any pol u of deg<g+2, we have iso 
+ //preserving q given by 
+ //[p,q] to [q,p+u^2+q*u]
+ Gq:=[A: A in GL2 | Numerator((A[2,1]*x+A[2,2])^(g+1)*Evaluate(q,(A[1,1]*x+A[1,2])/(A[2,1]*x+A[2,2]))) eq q]; 
+V11q:=[];
+ SVq:=Set(V11);
+ Vq:=[];
+ for v in V5 do
+  u:=&+[v[i+1]*x^i: i in [0..g+1]];
+  uq:=u^2+q*u;
+  Append(~Vq,V11![Coefficient(uq,i): i in [0..2*g+2]]);
+ end for;
+ while not(IsEmpty(SVq)) do
+    v:=Rep(SVq);
+    Sv:={v+u: u in Vq};
+    Sv:={&+[v[i+1]*x^i: i in [0..2*g+2]]: v in Sv};
+    Sv:={
+Numerator((A[2,1]*x+A[2,2])^(2*g+2)*Evaluate(v,(A[1,1]*x+A[1,2])/(A[2,1]*x+A[2,2]))): A in Gq,v in Sv};
+    Sv:={V11![Coefficient(v,i): i in [0..2*g+2]]: v in Sv};
+    Append(~V11q,Min(Sv));
+    SVq diff:=Sv;
+ end while;
+ for v in V11q do 
+    p:=&+[v[i]*x^(i-1): i in [1..2*g+3]];
+    if Max([2*Degree(q),Degree(p)]) gt 2*g then 
+    try D:=HyperellipticCurve(p,q);
+      if Genus(D) eq g then 
+        Ns:=[#Points(BaseChange(D,GF(#K^i))): i in [1..g]];
+        Include(~ANumbers,Ns);
+        Include(~CurvesH,[p,q]);
+      end if;
+    catch e;
+    end try;
+    end if;
+ end for;
+end for;
+
+
+
+
+
+//Now the non-hyperelliptic Curves
+
+
+//Ambient space 
+
+P<X,Y,Z,T>:=ProjectiveSpace(K,3);
+
+vx:=[X,Y,Z,T];
+G:=GL(4,K);
+
+
+//Each non-hyperelliptic Genus 4 curve over F2
+//can be written as the intersection of 
+//one quadric (either Q1, Q2 or Q3) 
+// and one cubic. 
+
+//Non singular split quadric
+
+Q1:=X*Y+Z*T; 
+
+
+PDQ1:=FindCubicsQ(Q1);
+
+//Singular quadric 
+
+Q2:=X*Y+T^2;
+
+PDQ2:=FindCubicsQ(Q2);
+
+//Non split No singular quadric
+
+Q3:=X^2+Y^2+X*Y+Z*T;
+
+PDQ3:=FindCubicsQ(Q3);
+
+
+
+
+I:=[[i,j,k,l]: l in [0..3],k in [0..3], j in [0..3],i in [0..3]| i+j+l+k eq 3];
+XYZT:=[X^i[1]*Y^i[2]*Z^i[3]*T^i[4]: i in I];
+d:=#XYZT; //20
+Pd:=ProjectiveSpace(K,d-1);
+
+
+//We pack the three list in one list. Also the three Q's in one. 
+
+PDQ:=[PDQ1,PDQ2,PDQ3];
+Q:=[Q1,Q2,Q3];
+
+//Now, we compute the ANumbers for each of the non-hyperelliptic curves 
+
+
+for i in [1..3] do
+for v in PDQ[i] do
+    G:=&+[v[i]*XYZT[i]: i in [1..d]];
+    D:=Curve(P,[Q[i],G]);
+    DK:=#Points(D,K);
+    DK2:=#Points(D,K2);
+    DK3:=#Points(D,K3);
+    DK4:=#Points(D,K4);
+    Include(~ANumbers,[DK,DK2,DK3,DK4]);
+end for; 
+end for;
+
+//We convert the ANumbers into an ordered list.
+
+ANumbers:=Sort(Setseq(ANumbers));
+
+
+//Now we pack each Hyperelliptic Curve in the same place 
+//that its A-numbers
+
+
+CurvesHyper:=[[]: i in ANumbers];
+
+ for pq in CurvesH do 
+        D:=HyperellipticCurve(pq[1],pq[2]);
+        DK:=#Points(D);
+        DK2:=#Points(BaseChange(D,K2));
+        DK3:=#Points(BaseChange(D,K3));
+        DK4:=#Points(BaseChange(D,K4));
+        Dc:=[DK,DK2,DK3,DK4];
+        j:=Index(ANumbers,Dc);
+        Append(~CurvesHyper[j],pq);
+ end for;
+
+//we do the same for the Non hyperelliptic curves
+
+
+CurvesNHyper:=[[]: i in ANumbers];
+
+
+for i in [1..3] do
+  for v in PDQ[i] do
+      G:=&+[v[i]*XYZT[i]: i in [1..d]];
+      D:=Curve(P,[Q[i],G]);
+      DK:=#Points(D,K);
+      DK2:=#Points(D,K2);
+      DK3:=#Points(D,K3);
+      DK4:=#Points(D,K4);
+      Dc:=[DK,DK2,DK3,DK4];
+      j:=Index(ANumbers,Dc);
+      Append(~CurvesNHyper[j],[Q[i],G]);
+  end for;
+end for;
+
+
+NNumbers:=ANumbers;
+
+ANumbers:=[[a[1],(a[2]-a[1])/2,(a[3]-a[1])/3,(a[4]-a[2])/4]: a in NNumbers];
+
+Write("ListCurvesGenus4p2.txt",ANumbers);
+Write("ListCurvesGenus4p2.txt",CurvesHyper);
+Write("ListCurvesGenus4p2.txt",CurvesNHyper);
+
+//Example: The curves with A-number ANumbers[1]
+//are CurvesHyper[1] and CurvesNHyper[1]
+
+
+
+
+[&+[ #CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][1] eq j]: j in [0..8]];
+
+//[ 9, 32, 58, 66, 58, 32, 9, 0, 0 ]
+
+[&+[ #CurvesNHyper[i]: i in [1..#ANumbers] | ANumbers[i][1] eq j]: j in [0..8]];
+
+
+//[ 31, 119, 202, 201, 117, 68, 30, 11, 1 ]
+
+[&+[ #CurvesNHyper[i]+#CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][1] eq j]: j in [0..8]];
+
+
+//[ 40, 151, 260, 267, 175, 100, 39, 11, 1 ]
+
+
+
+Max([#c: c in CurvesHyper]);
+
+//4 356 
+
+[&+[ 1: c in CurvesHyper | #c eq j]: j in [0..4]];
+
+
+//[ 403, 174, 40, 2, 1 ]
+
+
+Max([#c: c in CurvesNHyper]);
+
+//5
+
+[&+[ 1: c in CurvesNHyper | #c eq j]: j in [0..5]];
+
+
+//[ 99, 341, 128, 31, 15, 6 ]
+
+
+Max([#CurvesNHyper[i]+#CurvesHyper[i]: i in [1..#ANumbers]]);
+
+//7 356 
+
+[&+[ 1: i in [1..#ANumbers] | #CurvesNHyper[i]+#CurvesHyper[i] eq j]: j in [1..7]];
+
+//[ 361, 165, 49, 25, 15, 4, 1 ]
+
+
+
+ANumbers[356]
+
+//[ 3, 9, 9, 21 ]
+
+
+CurvesHyper[356];
+CurvesNHyper[356];
+
+/*
+[
+    [
+        x^9 + x^3 + x + 1,
+        x^4 + x^3 + 1
+    ],
+    [
+        x^9 + 1,
+        x^4 + x^3 + 1
+    ],
+    [
+        x^9 + x^8 + x^3,
+        x^4 + x^3 + 1
+    ],
+    [
+        x^9 + x^8 + x,
+        x^4 + x^3 + 1
+    ]
+]
+[
+    [
+        X*Y + Z*T,
+        X^3 + X*Y^2 + Y^3 + X^2*Z + X*Y*Z + X*Z^2 + X*T^2
+    ],
+    [
+        X*Y + Z*T,
+        X^3 + X^2*Y + X*Y^2 + Y^3 + X^2*Z + X*Y*Z + Y^2*Z + X*Z^2 + X^2*T +
+            X*Y*T + X*T^2
+    ],
+    [
+        X*Y + T^2,
+        X^2*Y + Y^3 + X*Y*Z + Z^3 + X^2*T + X*Y*T + Y^2*T + X*Z*T
+    ]
+]
+*/
+
+
+//Tables for ANumbers
+
+ Max([a[2]: a in ANumbers]);
+
+
+[&+[ #CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][2] eq j]: j in [0..7]];
+
+//[ 33, 61, 79, 61, 27, 3, 0, 0 ]
+
+[&+[ #CurvesNHyper[i]: i in [1..#ANumbers] | ANumbers[i][2] eq j]: j in [0..7]];
+
+//[ 78, 169, 211, 175, 103, 35, 8, 1 ]
+
+[&+[ #CurvesNHyper[i]+#CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][2] eq j]: j in [0..7]];
+
+//[ 111, 230, 290, 236, 130, 38, 8, 1 ]
+
+
+
+Max([a[3]: a in ANumbers]);
+
+
+[&+[ #CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][3] eq j]: j in [0..8]];
+
+//[ 55, 28, 98, 28, 55, 0, 0, 0, 0 ]
+
+[&+[ #CurvesNHyper[i]: i in [1..#ANumbers] | ANumbers[i][3] eq j]: j in [0..8]];
+
+//[ 53, 135, 195, 180, 109, 62, 36, 8, 2 ]
+
+[&+[ #CurvesNHyper[i]+#CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][3] eq j]: j in [0..8]];
+
+//[ 108, 163, 293, 208, 164, 62, 36, 8, 2 ]
+
+
+Max([a[4]: a in ANumbers]);
+
+
+[&+[ #CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][4] eq j]: j in [0..10]];
+
+//[ 17, 20, 52, 39, 63, 38, 23, 12, 0, 0, 0 ]
+
+[&+[ #CurvesNHyper[i]: i in [1..#ANumbers] | ANumbers[i][4] eq j]: j in [0..10]];
+
+//[ 19, 78, 135, 179, 152, 98, 68, 28, 16, 6, 1 ]
+
+[&+[ #CurvesNHyper[i]+#CurvesHyper[i]: i in [1..#ANumbers] | ANumbers[i][4] eq j]: j in [0..10]];
+
+//[ 36, 98, 187, 218, 215, 136, 91, 40, 16, 6, 1 ]
+
+
+
+
+//The smallest curve 
+
+ANumbers[1];
+
+//[0,0,0,1]
+
+
+ CurvesNHyper[1];
+
+/*
+[
+    [
+        X^2 + X*Y + Y^2 + Z*T,
+        Y^3 + X*Z^2 + Z^3 + X*Y*T + T^3
+    ]
+]
+*/
+
+
+
+
+[i: i in [1..#ANumbers] | #CurvesNHyper[i] eq 5];
+
+//[ 48, 51, 157, 194, 216, 390 ]
+
+
+
+nim:=[#Seqset([c[1]: c in CurvesNHyper[i]]): i in [1..#ANumbers]];
+ [i: i in [1..#ANumbers] | nim[i] eq 3 and #CurvesHyper[i] gt 0];
+
+//[ 363, 465 ]
+
+
+> CurvesHyper[465];
+[
+    [
+        x^9 + 1,
+        x
+    ]
+]
+
+> CurvesNHyper[465];
+[
+    [
+        X*Y + Z*T,
+        X^3 + X*Y^2 + X^2*Z + Y^2*Z + X*Z^2 + Y^2*T + X*T^2
+    ],
+    [
+        X*Y + Z*T,
+        Y^3 + X^2*Z + X*Y*Z + Y^2*Z + Y*Z^2 + X^2*T + X*T^2
+    ],
+    [
+        X*Y + T^2,
+        Y^3 + X^2*Z + X*Y*Z + Z^3 + X^2*T
+    ],
+    [
+        X^2 + X*Y + Y^2 + Z*T,
+        X^3 + X^2*Y + Y^3 + X^2*Z + X*Y*Z + X*Z^2 + X*Y*T + X*T^2
+    ]
+]
+> CurvesNHyper[363];
+[
+    [
+        X*Y + Z*T,
+        X^3 + Y^3 + X^2*Z + Y^2*Z + X*Z^2 + Y*Z^2 + X*T^2
+    ],
+    [
+        X*Y + Z*T,
+        X*Y^2 + Y^3 + X^2*Z + X*Y*Z + Y^2*Z + X*Z^2 + Z^3 + X^2*T + X*T^2
+    ],
+    [
+        X*Y + T^2,
+        X^3 + Y^3 + X*Y*Z + Y^2*Z + Z^3 + X*Z*T
+    ],
+    [
+        X^2 + X*Y + Y^2 + Z*T,
+        X^2*Y + X*Y^2 + Y*Z^2 + X^2*T + X*T^2
+    ]
+]
